@@ -1,0 +1,27 @@
+[project]
+name = "techapoli-ocr-liquidaciones"
+version = "0.1.0"
+description = "Servicio FastAPI: OCR (OpenAI vision) + validación Jev (TypeSafe) -> Excel de liquidaciones"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pydantic-settings",
+    "openai>=1.0",
+    "pillow",
+    "openpyxl",
+    "pymupdf",
+    "python-dotenv",
+    "truststore",
+    "typesafe-sdk",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx", "ruff"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

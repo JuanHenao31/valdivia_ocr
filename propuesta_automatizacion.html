@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Valdivia · Automatización OCR + IA → Excel en la nube</title>
+<style>
+  :root{
+    --bg:#0b1220;
+    --bg2:#0f1a2e;
+    --card:#121f38;
+    --card2:#16294a;
+    --line:#1f3357;
+    --green:#2dd4a7;
+    --green2:#14b88a;
+    --lime:#a3e635;
+    --blue:#4f9dff;
+    --amber:#fbbf24;
+    --red:#f87171;
+    --purple:#a78bfa;
+    --txt:#e6edf7;
+    --mut:#90a2c0;
+    --mut2:#64748b;
+    --shadow:0 20px 50px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    font-family:'Segoe UI',Roboto,system-ui,-apple-system,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(45,212,167,.12), transparent 60%),
+      radial-gradient(1000px 500px at 0% 10%, rgba(79,157,255,.12), transparent 55%),
+      var(--bg);
+    color:var(--txt);
+    line-height:1.6;
+    overflow-x:hidden;
+  }
+  a{color:var(--green)}
+
+  /* ===== NAV ===== */
+  nav{
+    position:sticky;top:0;z-index:100;
+    backdrop-filter:blur(12px);
+    background:rgba(11,18,32,.82);
+    border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px clamp(16px,4vw,48px);
+  }
+  .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:.5px}
+  .brand .logo{
+    width:34px;height:34px;border-radius:9px;
+    background:linear-gradient(135deg,var(--green),var(--blue));
+    display:grid;place-items:center;font-size:18px;box-shadow:var(--shadow)
+  }
+  .brand small{display:block;font-weight:500;color:var(--mut);font-size:11px;letter-spacing:1.5px}
+  .navlinks{display:flex;gap:6px;flex-wrap:wrap}
+  .navlinks a{
+    color:var(--mut);text-decoration:none;font-size:13px;font-weight:600;
+    padding:8px 12px;border-radius:8px;transition:.2s
+  }
+  .navlinks a:hover{color:var(--txt);background:var(--card2)}
+  @media(max-width:860px){.navlinks{display:none}}
+
+  /* ===== LAYOUT ===== */
+  section{padding:clamp(48px,8vw,110px) clamp(16px,5vw,64px);max-width:1200px;margin:0 auto}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+    color:var(--green);background:rgba(45,212,167,.1);
+    border:1px solid rgba(45,212,167,.25);padding:6px 14px;border-radius:999px;margin-bottom:18px
+  }
+  h1{font-size:clamp(34px,6vw,64px);line-height:1.05;margin:0 0 18px;font-weight:800;letter-spacing:-1px}
+  h2{font-size:clamp(26px,4vw,42px);margin:0 0 14px;font-weight:800;letter-spacing:-.5px}
+  h3{font-size:20px;margin:0 0 8px;font-weight:700}
+  .lead{font-size:clamp(16px,2vw,20px);color:var(--mut);max-width:720px}
+  .grad{background:linear-gradient(100deg,var(--green),var(--lime) 60%,var(--blue));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* ===== HERO ===== */
+  .hero{min-height:88vh;display:flex;flex-direction:column;justify-content:center;position:relative}
+  .hero .cta{display:flex;gap:14px;flex-wrap:wrap;margin-top:34px}
+  .btn{
+    text-decoration:none;font-weight:700;font-size:15px;padding:14px 26px;border-radius:12px;transition:.2s;
+    display:inline-flex;align-items:center;gap:9px
+  }
+  .btn.primary{background:linear-gradient(135deg,var(--green),var(--green2));color:#042016;box-shadow:0 12px 30px rgba(45,212,167,.3)}
+  .btn.primary:hover{transform:translateY(-2px)}
+  .btn.ghost{border:1px solid var(--line);color:var(--txt)}
+  .btn.ghost:hover{background:var(--card2)}
+  .hero-stats{display:flex;gap:38px;margin-top:52px;flex-wrap:wrap}
+  .hero-stats .s b{display:block;font-size:clamp(28px,4vw,40px);font-weight:800;color:var(--lime)}
+  .hero-stats .s span{color:var(--mut);font-size:13px}
+  .floaty{position:absolute;opacity:.5;filter:blur(1px);animation:float 7s ease-in-out infinite}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)}}
+
+  /* ===== REVEAL ===== */
+  .reveal{opacity:0;transform:translateY(28px);transition:.7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+
+  /* ===== CARDS GRID ===== */
+  .grid{display:grid;gap:18px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:900px){.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:620px){.g2,.g3,.g4{grid-template-columns:1fr}}
+  .card{
+    background:linear-gradient(180deg,var(--card),var(--bg2));
+    border:1px solid var(--line);border-radius:18px;padding:26px;position:relative;overflow:hidden;transition:.3s
+  }
+  .card:hover{transform:translateY(-4px);border-color:rgba(45,212,167,.4)}
+  .card .ic{font-size:28px;margin-bottom:14px;display:inline-grid;place-items:center;width:52px;height:52px;border-radius:13px;background:var(--card2)}
+  .card p{color:var(--mut);margin:6px 0 0;font-size:15px}
+  .tag{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mut2)}
+
+  /* ===== FLOW DIAGRAM ===== */
+  .flow{display:flex;flex-direction:column;gap:0;margin-top:40px}
+  .step{display:grid;grid-template-columns:72px 1fr;gap:22px;position:relative;padding-bottom:34px}
+  .step:last-child{padding-bottom:0}
+  .step::before{content:"";position:absolute;left:35px;top:70px;bottom:-4px;width:2px;background:linear-gradient(var(--green),transparent)}
+  .step:last-child::before{display:none}
+  .node{
+    width:70px;height:70px;border-radius:50%;display:grid;place-items:center;font-size:30px;
+    background:radial-gradient(circle at 30% 30%,var(--card2),var(--card));
+    border:2px solid var(--green);box-shadow:0 0 0 6px rgba(45,212,167,.08);z-index:2
+  }
+  .step .body{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 24px}
+  .step .num{font-size:12px;font-weight:800;letter-spacing:2px;color:var(--green)}
+  .pulse{animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(45,212,167,.4)}70%{box-shadow:0 0 0 16px rgba(45,212,167,0)}100%{box-shadow:0 0 0 0 rgba(45,212,167,0)}}
+
+  /* ===== PIPELINE ANIMATION (packet travels) ===== */
+  .pipeline{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:34px 24px;margin-top:36px;overflow-x:auto}
+  .track{display:flex;align-items:center;justify-content:space-between;min-width:720px;position:relative}
+  .pstage{text-align:center;flex:1;position:relative;z-index:2}
+  .pstage .dot{width:64px;height:64px;margin:0 auto 10px;border-radius:16px;display:grid;place-items:center;font-size:26px;background:var(--card2);border:1px solid var(--line);transition:.3s}
+  .pstage .lbl{font-size:13px;font-weight:700}
+  .pstage .sub{font-size:11px;color:var(--mut)}
+  .wire{position:absolute;top:32px;left:7%;right:7%;height:3px;background:var(--line);border-radius:3px;z-index:1}
+  .wire .flux{position:absolute;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:var(--lime);box-shadow:0 0 14px var(--lime);animation:travel 5s linear infinite}
+  @keyframes travel{0%{left:0}100%{left:100%}}
+  .pstage.active .dot{border-color:var(--green);box-shadow:0 0 0 6px rgba(45,212,167,.12);transform:translateY(-3px)}
+
+  /* ===== EXCEL MOCKUP ===== */
+  .xls{background:#0d1526;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+  .xls .bar{display:flex;align-items:center;gap:8px;padding:12px 16px;background:#107c41}
+  .xls .bar b{color:#fff;font-size:14px}
+  .xls .bar .dots{display:flex;gap:6px;margin-left:auto}
+  .xls .bar .dots i{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.5);display:inline-block}
+  table.sheet{width:100%;border-collapse:collapse;font-size:13px}
+  table.sheet th,table.sheet td{border:1px solid #233}
+  table.sheet th{background:#15233d;color:var(--mut);padding:8px 10px;font-weight:700;text-align:left}
+  table.sheet td{padding:8px 10px;color:var(--txt)}
+  td.rev{background:rgba(251,191,36,.22);color:#fde68a;position:relative;animation:blink 2.6s infinite}
+  @keyframes blink{0%,100%{background:rgba(251,191,36,.1)}50%{background:rgba(251,191,36,.32)}}
+  td.ok{color:var(--green)}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:16px;font-size:13px;color:var(--mut)}
+  .legend span{display:inline-flex;align-items:center;gap:8px}
+  .sw{width:16px;height:16px;border-radius:4px;display:inline-block}
+
+  /* ===== FOLDER TREE ===== */
+  .tree{font-family:'Consolas',monospace;font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;line-height:2}
+  .tree .f{color:var(--amber)}
+  .tree .x{color:var(--green)}
+  .tree .mut{color:var(--mut2)}
+  .indent{padding-left:26px;border-left:1px dashed var(--line);margin-left:8px}
+
+  /* ===== COSTS ===== */
+  .cost-table{width:100%;border-collapse:collapse;margin-top:22px;font-size:14px;background:var(--card);border-radius:16px;overflow:hidden;border:1px solid var(--line)}
+  .cost-table th{background:var(--card2);text-align:left;padding:15px 18px;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--mut)}
+  .cost-table td{padding:15px 18px;border-top:1px solid var(--line);vertical-align:top}
+  .cost-table td.price{text-align:right;font-weight:800;white-space:nowrap;color:var(--lime)}
+  .cost-table tr:hover td{background:rgba(255,255,255,.02)}
+  .cost-table .total td{background:rgba(45,212,167,.08);font-weight:800;font-size:16px;border-top:2px solid var(--green)}
+  .cost-table small{color:var(--mut);font-weight:400;display:block;margin-top:3px}
+  .pill{font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px;letter-spacing:.5px}
+  .pill.once{background:rgba(79,157,255,.18);color:var(--blue)}
+  .pill.mo{background:rgba(167,139,250,.18);color:var(--purple)}
+  .pill.free{background:rgba(45,212,167,.18);color:var(--green)}
+
+  /* ===== ROUTES ===== */
+  .route{position:relative}
+  .route.rec{border-color:var(--green);box-shadow:0 0 0 1px var(--green),0 22px 44px rgba(45,212,167,.14)}
+  .vb{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;padding:5px 11px;border-radius:999px;letter-spacing:.5px;margin-bottom:12px}
+  .vb.rec{background:rgba(45,212,167,.18);color:var(--green)}
+  .vb.ok{background:rgba(79,157,255,.18);color:var(--blue)}
+  .vb.warn{background:rgba(251,191,36,.18);color:var(--amber)}
+  .vb.no{background:rgba(248,113,113,.18);color:var(--red)}
+  .route ul{list-style:none;padding:0;margin:12px 0 0;font-size:13.5px}
+  .route ul li{padding:6px 0 6px 22px;position:relative;color:var(--mut)}
+  .route ul li::before{content:"•";position:absolute;left:4px;color:var(--mut2)}
+  .route .meta{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between;gap:10px;color:var(--mut)}
+  .route .meta b{color:var(--lime)}
+
+  /* ===== CALCULATOR ===== */
+  .calc{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:20px;padding:30px;margin-top:26px}
+  .calc label{display:block;font-weight:700;margin-bottom:6px;font-size:14px}
+  .calc input[type=range]{width:100%;accent-color:var(--green)}
+  .calc .readout{display:flex;justify-content:space-between;font-size:13px;color:var(--mut);margin-top:4px}
+  .calc .result{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:28px}
+  @media(max-width:620px){.calc .result{grid-template-columns:1fr}}
+  .calc .result .box{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:18px;text-align:center}
+  .calc .result .box b{display:block;font-size:26px;color:var(--lime);font-weight:800}
+  .calc .result .box span{font-size:12px;color:var(--mut)}
+  .bignum{font-size:30px;font-weight:800;color:var(--green)}
+  .calc .two{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+  @media(max-width:620px){.calc .two{grid-template-columns:1fr}}
+  .calc .result.four{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:900px){.calc .result.four{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.calc .result.four{grid-template-columns:1fr}}
+  .savings{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}
+  @media(max-width:620px){.savings{grid-template-columns:1fr}}
+  .savings .sv{background:linear-gradient(135deg,rgba(45,212,167,.16),rgba(79,157,255,.1));border:1px solid rgba(45,212,167,.35);border-radius:14px;padding:20px;text-align:center}
+  .savings .sv span{display:block;font-size:12px;color:var(--mut);margin-bottom:6px}
+  .savings .sv b{font-size:28px;color:var(--green);font-weight:800;line-height:1.1}
+
+  /* ===== TIMELINE ===== */
+  .timeline{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:30px}
+  @media(max-width:860px){.timeline{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.timeline{grid-template-columns:1fr}}
+  .tl{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;position:relative}
+  .tl .wk{font-size:11px;font-weight:800;color:var(--green);letter-spacing:1px}
+  .tl h4{margin:8px 0 6px;font-size:15px}
+  .tl p{margin:0;font-size:12.5px;color:var(--mut)}
+
+  .note{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:14px;padding:18px 22px;color:#fde68a;font-size:14px;margin-top:24px}
+  .checklist{list-style:none;padding:0;margin:14px 0 0}
+  .checklist li{padding:8px 0 8px 32px;position:relative;color:var(--mut)}
+  .checklist li::before{content:"✓";position:absolute;left:0;top:7px;color:var(--green);font-weight:800;background:rgba(45,212,167,.12);width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px}
+
+  footer{border-top:1px solid var(--line);padding:40px clamp(16px,5vw,64px);text-align:center;color:var(--mut2);font-size:13px}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand">
+    <div class="logo">🌱</div>
+    <div>Valdivia<small>AUTOMATIZACIÓN DOCUMENTAL</small></div>
+  </div>
+  <div class="navlinks">
+    <a href="#problema">Problema</a>
+    <a href="#flujo">Flujo</a>
+    <a href="#arquitectura">Arquitectura</a>
+    <a href="#excel">Excel</a>
+    <a href="#carpetas">Carpetas</a>
+    <a href="#rutas">Rutas</a>
+    <a href="#costos">Costos</a>
+    <a href="#calc">Calculadora</a>
+    <a href="#plan">Plan</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="floaty" style="right:6%;top:16%;font-size:70px">📄</div>
+  <div class="floaty" style="right:22%;top:52%;font-size:50px;animation-delay:1.5s">🤖</div>
+  <div class="floaty" style="right:38%;top:28%;font-size:40px;animation-delay:3s">📊</div>
+  <div class="eyebrow">🚀 Propuesta de automatización · 2026</div>
+  <h1>De <span style="color:var(--amber)">WhatsApp</span> al <span class="grad">Excel en la nube</span><br>sin tocar un solo dato a mano.</h1>
+  <p class="lead">Un flujo <b>autónomo</b> que captura los PDFs e imágenes que llegan por WhatsApp, los lee con inteligencia artificial, verifica cada campo con una segunda IA y actualiza el Excel semanal en OneDrive — resaltando en amarillo solo lo que un humano debe revisar.</p>
+  <div class="cta">
+    <a class="btn primary" href="#flujo">▶ Ver el flujo animado</a>
+    <a class="btn ghost" href="#costos">💰 Ir al desglose de costos</a>
+  </div>
+  <div class="hero-stats">
+    <div class="s"><b>~90%</b><span>menos tiempo manual</span></div>
+    <div class="s"><b>24/7</b><span>procesamiento desatendido</span></div>
+    <div class="s"><b>2×</b><span>IA de lectura + verificación</span></div>
+    <div class="s"><b>Día 1</b><span>carpetas creadas solas</span></div>
+  </div>
+</section>
+
+<!-- PROBLEMA -->
+<section id="problema" class="reveal">
+  <div class="eyebrow">El punto de partida</div>
+  <h2>Hoy, todo pasa por manos humanas</h2>
+  <p class="lead">Las fincas envían soportes por WhatsApp. Alguien tiene que abrir cada imagen, interpretarla, ir al Excel, copiar los datos, ubicar la semana correcta y guardar. Es lento, repetitivo y propenso a errores.</p>
+  <div class="grid g3" style="margin-top:34px">
+    <div class="card"><div class="ic">⏳</div><h3>Tiempo perdido</h3><p>Hoy, ~300 hojas/semana y 60 liquidaciones: el <b>30% de la jornada</b> de una persona se va solo en digitar.</p></div>
+    <div class="card"><div class="ic">❌</div><h3>Error humano</h3><p>Dígitos mal copiados, semanas equivocadas, soportes que se traspapelan.</p></div>
+    <div class="card"><div class="ic">🔁</div><h3>Trabajo repetitivo</h3><p>El mismo proceso manual una y otra vez, sin dejar nada aprendido ni trazable.</p></div>
+  </div>
+  <div class="note">💡 <b>La meta no es reemplazar a la persona</b>, sino convertir su rol de "transcriptor" a "revisor de excepciones": solo mira lo que la IA marca en amarillo.</div>
+</section>
+
+<!-- FLUJO -->
+<section id="flujo" class="reveal">
+  <div class="eyebrow">Cómo funciona</div>
+  <h2>El flujo, paso a paso</h2>
+  <p class="lead">Desde que llega el documento al WhatsApp hasta que el dato queda en el Excel — completamente automático.</p>
+
+  <!-- Pipeline horizontal animado -->
+  <div class="pipeline">
+    <div class="track">
+      <div class="wire"><div class="flux"></div><div class="flux" style="animation-delay:1.6s"></div><div class="flux" style="animation-delay:3.2s"></div></div>
+      <div class="pstage active" data-s="0"><div class="dot">💬</div><div class="lbl">WhatsApp</div><div class="sub">llega PDF / imagen</div></div>
+      <div class="pstage" data-s="1"><div class="dot">📥</div><div class="lbl">Captura</div><div class="sub">app en el celular</div></div>
+      <div class="pstage" data-s="2"><div class="dot">🧠</div><div class="lbl">OCR + IA</div><div class="sub">lee y extrae</div></div>
+      <div class="pstage" data-s="3"><div class="dot">✅</div><div class="lbl">IA Verifica</div><div class="sub">valida campos</div></div>
+      <div class="pstage" data-s="4"><div class="dot">📊</div><div class="lbl">Excel/OneDrive</div><div class="sub">escribe la fila</div></div>
+    </div>
+  </div>
+
+  <!-- Flujo vertical detallado -->
+  <div class="flow">
+    <div class="step reveal">
+      <div class="node pulse">💬</div>
+      <div class="body">
+        <div class="num">PASO 01 · ENTRADA</div>
+        <h3>Llega un documento al WhatsApp</h3>
+        <p>Las fincas envían al celular de la persona encargada los soportes del proceso: fotos de remisiones, facturas o PDFs. Ese celular es el punto único de entrada.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="node">📥</div>
+      <div class="body">
+        <div class="num">PASO 02 · CAPTURA</div>
+        <h3>La app en el celular detecta y filtra</h3>
+        <p>Una aplicación instalada en el teléfono vigila los mensajes entrantes e identifica <b>solo</b> los PDFs e imágenes que corresponden al proceso. El resto (saludos, memes, audios) se ignora automáticamente.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="node">🧠</div>
+      <div class="body">
+        <div class="num">PASO 03 · LECTURA CON IA</div>
+        <h3>OCR + IA extrae y clasifica los campos</h3>
+        <p>El documento se envía al motor de IA que lee la imagen, identifica cada campo (fecha, finca, cantidad, remisión, valores…), lo extrae y lo clasifica. No importa si la foto está torcida o con sombra: la IA interpreta el contexto.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="node">✅</div>
+      <div class="body">
+        <div class="num">PASO 04 · VERIFICACIÓN CON IA</div>
+        <h3>Una segunda IA valida la respuesta</h3>
+        <p>Antes de escribir nada, un segundo modelo revisa la coherencia de lo extraído (sumas, formatos, campos obligatorios, valores atípicos). Si todo cuadra con alta confianza → se escribe normal. Si hay duda → se marca para revisión.</p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="node">📊</div>
+      <div class="body">
+        <div class="num">PASO 05 · ESCRITURA EN EXCEL (ONEDRIVE)</div>
+        <h3>Se crea o actualiza la fila en la semana correcta</h3>
+        <p>Vía Microsoft Graph API, el dato entra directo al Excel en la nube, en la hoja/semana que corresponde (lunes a viernes o lunes a domingo). <b>Las celdas que requieren revisión se pintan de amarillo.</b></p>
+      </div>
+    </div>
+    <div class="step reveal">
+      <div class="node">👁️</div>
+      <div class="body">
+        <div class="num">PASO 06 · REVISIÓN HUMANA (SOLO EXCEPCIONES)</div>
+        <h3>La persona revisa únicamente lo amarillo</h3>
+        <p>En lugar de transcribir todo, el encargado solo audita las celdas resaltadas. Alta precisión, mínimo esfuerzo. El proceso quedó trazado y auditable de punta a punta.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ARQUITECTURA -->
+<section id="arquitectura" class="reveal">
+  <div class="eyebrow">Por dentro</div>
+  <h2>Arquitectura técnica</h2>
+  <p class="lead">Componentes que hacen posible el flujo. Todo se apoya en servicios que Valdivia ya posee (Microsoft 365) más un motor de IA.</p>
+  <div class="grid g4" style="margin-top:34px">
+    <div class="card"><div class="tag">ENTRADA</div><div class="ic">📲</div><h3>App de captura</h3><p>Monitorea WhatsApp en el celular, filtra PDFs/imágenes del proceso y los envía al motor.</p></div>
+    <div class="card"><div class="tag">INTELIGENCIA</div><div class="ic">🧠</div><h3>Motor OCR + IA</h3><p>Visión por IA que lee imágenes, extrae y clasifica campos, y una segunda IA que verifica.</p></div>
+    <div class="card"><div class="tag">ORQUESTACIÓN</div><div class="ic">⚙️</div><h3>Servidor / n8n / cron</h3><p>Coordina los pasos, maneja reintentos y dispara la tarea mensual del día 1.</p></div>
+    <div class="card"><div class="tag">ALMACÉN</div><div class="ic">☁️</div><h3>OneDrive + Graph API</h3><p>Microsoft Graph crea carpetas y escribe en el Excel en la nube sin descargarlo.</p></div>
+  </div>
+
+  <div class="grid g2" style="margin-top:22px">
+    <div class="card">
+      <h3>🔐 Autenticación segura (sin intervención)</h3>
+      <p>El script se autentica con <b>Entra ID</b> mediante el flujo <b>Client Credentials</b> (de aplicación, no de usuario) usando la librería <code>MSAL</code>. Esto permite correr desatendido el día 1 sin que nadie inicie sesión.</p>
+      <ul class="checklist">
+        <li>App registrada en Entra ID (gratis, incluido con el correo @valdivia.com)</li>
+        <li>Permiso <code>Files.ReadWrite.All</code> con consentimiento de administrador</li>
+        <li>Client ID + Client Secret + Tenant ID guardados de forma segura</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>🧩 Doble IA = alta precisión</h3>
+      <p>El patrón "lector + verificador" reduce drásticamente los errores: un modelo propone la lectura y otro la audita antes de escribir.</p>
+      <ul class="checklist">
+        <li>IA de visión → extrae texto y estructura</li>
+        <li>IA de verificación → valida sumas, formatos y campos obligatorios</li>
+        <li>Umbral de confianza → decide verde (ok) o amarillo (revisar)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- EXCEL -->
+<section id="excel" class="reveal">
+  <div class="eyebrow">El resultado</div>
+  <h2>Así se ve el Excel semanal</h2>
+  <p class="lead">Los datos se escriben solos en la semana correcta. Lo que la IA no logra confirmar al 100% queda en amarillo para revisión humana.</p>
+
+  <div class="xls" style="margin-top:30px">
+    <div class="bar"><b>📊 Empresa1 · Mes 10 · Semana 2.xlsx</b><div class="dots"><i></i><i></i><i></i></div></div>
+    <table class="sheet">
+      <thead><tr><th>Fecha</th><th>Finca</th><th>Remisión</th><th>Cantidad</th><th>Valor</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td>07/10</td><td>La Esperanza</td><td>R-10482</td><td>1.250</td><td>$4.812.000</td><td class="ok">✓ Auto</td></tr>
+        <tr><td>07/10</td><td>El Mirador</td><td class="rev">R-10?83</td><td>980</td><td>$3.774.000</td><td class="rev">⚠ Revisar</td></tr>
+        <tr><td>08/10</td><td>La Esperanza</td><td>R-10485</td><td>1.100</td><td>$4.235.000</td><td class="ok">✓ Auto</td></tr>
+        <tr><td>08/10</td><td>Buenavista</td><td>R-10486</td><td class="rev">¿?</td><td class="rev">$—</td><td class="rev">⚠ Revisar</td></tr>
+        <tr><td>09/10</td><td>El Mirador</td><td>R-10488</td><td>1.340</td><td>$5.159.000</td><td class="ok">✓ Auto</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend">
+    <span><span class="sw" style="background:rgba(251,191,36,.5)"></span> Amarillo = requiere revisión humana</span>
+    <span><span class="sw" style="background:var(--green)"></span> Verde = validado automáticamente por la IA</span>
+  </div>
+</section>
+
+<!-- CARPETAS -->
+<section id="carpetas" class="reveal">
+  <div class="eyebrow">Automatización mensual</div>
+  <h2>El día 1 de cada mes, las carpetas se crean solas</h2>
+  <p class="lead">Un script programado genera automáticamente la estructura de carpetas y los archivos Excel de cada empresa, mes y semana en OneDrive. Sin intervención manual.</p>
+
+  <div class="grid g2" style="margin-top:30px">
+    <div class="tree">
+      <div class="mut"># OneDrive — estructura generada automáticamente</div>
+      📁 <span class="f">Valdivia</span>
+      <div class="indent">
+        📁 <span class="f">Empresa1</span>
+        <div class="indent">
+          📁 <span class="f">Mes 10</span>
+          <div class="indent">
+            📁 <span class="f">Semana 1</span> → 📄 <span class="x">datos.xlsx</span><br>
+            📁 <span class="f">Semana 2</span> → 📄 <span class="x">datos.xlsx</span><br>
+            📁 <span class="f">Semana 3</span> → 📄 <span class="x">datos.xlsx</span><br>
+            📁 <span class="f">Semana 4</span> → 📄 <span class="x">datos.xlsx</span>
+          </div>
+        </div>
+        📁 <span class="f">Empresa2</span> <span class="mut">→ Mes 10 → Semana 1…n</span>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="ic">🗓️</div>
+        <h3>Disparador: día 1, 00:00</h3>
+        <p>Programado con cron / n8n / contenedor Docker. Se despierta, crea todo lo del mes y vuelve a dormir.</p>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="ic">🛡️</div>
+        <h3>A prueba de duplicados</h3>
+        <p>Si por error corre dos veces, usa <code>conflictBehavior: rename</code> — nunca sobrescribe ni borra datos existentes.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RUTAS / ALTERNATIVAS -->
+<section id="rutas" class="reveal">
+  <div class="eyebrow">Opciones</div>
+  <h2>Otras rutas para llevar la solución</h2>
+  <p class="lead">La misma meta —datos en el Excel sin transcribir— se puede alcanzar por varios caminos. Las ordenamos de la más automática a la inviable, para que elijan la ideal.</p>
+
+  <div class="grid g2" style="margin-top:34px">
+    <div class="card route rec">
+      <span class="vb rec">⭐ RECOMENDADA</span>
+      <h3>Ruta A · Automática por WhatsApp</h3>
+      <p>La propuesta de este documento. Los soportes llegan al WhatsApp y se procesan solos: cero carga manual.</p>
+      <ul>
+        <li>Pasos manuales: <b style="color:var(--green)">ninguno</b> (solo revisar lo amarillo)</li>
+        <li>Totalmente desatendida, funciona 24/7</li>
+        <li>Carpetas y Excel se crean automáticamente cada mes</li>
+      </ul>
+      <div class="meta"><span>Inversión</span><b>$8.000.000 + operación</b></div>
+    </div>
+
+    <div class="card route">
+      <span class="vb ok">✅ VIABLE</span>
+      <h3>Ruta B · App propia de carga</h3>
+      <p>Una app web/móvil donde el encargado sube las fotos; de ahí la IA procesa igual que en la Ruta A. Útil si no quieren depender del WhatsApp.</p>
+      <ul>
+        <li>Pasos manuales: <b style="color:var(--amber)">1</b> (abrir la app y subir)</li>
+        <li>Más control y pantalla de revisión propia</li>
+        <li>Suma el desarrollo de la app + su hosting</li>
+      </ul>
+      <div class="meta"><span>Inversión</span><b>$8M + $4–6M (app)</b></div>
+    </div>
+
+    <div class="card route">
+      <span class="vb warn">⚠️ CON FRICCIÓN</span>
+      <h3>Ruta C · Carpeta o correo monitoreado</h3>
+      <p>El encargado reenvía los soportes a una carpeta de OneDrive o a un correo dedicado; un vigilante los procesa automáticamente.</p>
+      <ul>
+        <li>Pasos manuales: <b style="color:var(--amber)">1</b> (reenviar cada soporte)</li>
+        <li>Más barata y rápida de construir</li>
+        <li>Depende de que nadie olvide reenviar</li>
+      </ul>
+      <div class="meta"><span>Inversión</span><b>≈ $5–6M</b></div>
+    </div>
+
+    <div class="card route">
+      <span class="vb no">❌ INVIABLE</span>
+      <h3>Ruta D · Suite enterprise o 100% manual</h3>
+      <p>Power Automate Premium + AI Builder exige licencias costosas por usuario/mes y es rígido. Seguir 100% manual tiene un costo oculto enorme en horas.</p>
+      <ul>
+        <li>Pasos manuales: <b style="color:var(--red)">muchos</b> o licencias caras</li>
+        <li>Costo mensual alto y poca flexibilidad</li>
+        <li>No aprovecha lo que Valdivia ya tiene</li>
+      </ul>
+      <div class="meta"><span>Costo</span><b>Alto y recurrente</b></div>
+    </div>
+  </div>
+
+  <table class="cost-table" style="margin-top:30px">
+    <thead><tr><th>Ruta</th><th>Automatización</th><th>Pasos manuales</th><th>Inversión aprox.</th><th class="price">Veredicto</th></tr></thead>
+    <tbody>
+      <tr><td><b>A · WhatsApp automático</b></td><td>Total (24/7)</td><td>Ninguno</td><td>$8.000.000</td><td class="price" style="color:var(--green)">⭐ Ideal</td></tr>
+      <tr><td>B · App de carga</td><td>Alta</td><td>Subir imágenes</td><td>$12–14M</td><td class="price" style="color:var(--blue)">Viable</td></tr>
+      <tr><td>C · Carpeta / correo</td><td>Media</td><td>Reenviar soportes</td><td>$5–6M</td><td class="price" style="color:var(--amber)">Con fricción</td></tr>
+      <tr><td>D · Enterprise / manual</td><td>Baja o nula</td><td>Muchos / licencias</td><td>Alto recurrente</td><td class="price" style="color:var(--red)">Descartada</td></tr>
+    </tbody>
+  </table>
+  <div class="note">🧭 <b>Recomendación:</b> la Ruta A da el mayor retorno porque elimina por completo la transcripción manual aprovechando el WhatsApp que ya usan. La Ruta B es el plan B natural si prefieren una app propia de carga.</div>
+</section>
+
+<!-- COSTOS -->
+<section id="costos" class="reveal">
+  <div class="eyebrow">Inversión</div>
+  <h2>Desglose de costos por ítem</h2>
+  <p class="lead">Separamos la inversión en dos bloques: <b>desarrollo (pago único)</b> y <b>operación (mensual recurrente)</b>. Los valores son estimados en pesos colombianos (COP) y se ajustan según el volumen real y el alcance final.</p>
+
+  <div class="note" style="background:rgba(45,212,167,.08);border-color:rgba(45,212,167,.35);color:#a7f3d6">🔥 <b>Oferta competitiva:</b> ajustamos el desarrollo a <b>$8.000.000</b> y el soporte a <b>$100.000/hora (mitad de tarifa) y solo cuando se necesite</b> para cerrar el negocio — una tarifa agresiva pensada para ganar el proyecto.</div>
+
+  <!-- DESARROLLO -->
+  <h3 style="margin-top:40px;display:flex;align-items:center;gap:10px"><span class="pill once">PAGO ÚNICO</span> Desarrollo e implementación</h3>
+  <table class="cost-table">
+    <thead><tr><th>Ítem</th><th>Qué incluye</th><th class="price">Costo (COP)</th></tr></thead>
+    <tbody>
+      <tr><td>Configuración Entra ID + Graph API</td><td>Registro de app, permisos, autenticación MSAL desatendida<small>Infra Microsoft: $0 (incluida con el correo)</small></td><td class="price">$400.000</td></tr>
+      <tr><td>Módulo de captura (WhatsApp → sistema)</td><td>App/puente que detecta y filtra PDFs e imágenes del proceso en el celular</td><td class="price">$1.400.000</td></tr>
+      <tr><td>Motor OCR + IA de extracción</td><td>Lectura de imágenes, extracción y clasificación de campos, prompts afinados</td><td class="price">$1.900.000</td></tr>
+      <tr><td>Módulo de verificación con IA</td><td>Segundo modelo validador, reglas de negocio, umbral de confianza</td><td class="price">$1.100.000</td></tr>
+      <tr><td>Integración Excel + lógica semanal</td><td>Escritura vía Graph, mapeo de campos, hoja/semana correcta, resaltado amarillo</td><td class="price">$1.200.000</td></tr>
+      <tr><td>Automatización mensual de carpetas</td><td>Script del día 1: estructura empresa/mes/semana + archivos Excel</td><td class="price">$500.000</td></tr>
+      <tr><td>Orquestación y despliegue</td><td>Montaje en servidor/Docker/n8n, cron, manejo de reintentos y logs</td><td class="price">$700.000</td></tr>
+      <tr><td>Pruebas, ajustes y capacitación</td><td>Pruebas con documentos reales, afinamiento de precisión y entrega guiada</td><td class="price">$800.000</td></tr>
+      <tr class="total"><td colspan="2">Total desarrollo (pago único)</td><td class="price">$8.000.000</td></tr>
+    </tbody>
+  </table>
+
+  <!-- OPERACIÓN -->
+  <h3 style="margin-top:46px;display:flex;align-items:center;gap:10px"><span class="pill mo">MENSUAL</span> Operación recurrente</h3>
+  <table class="cost-table">
+    <thead><tr><th>Ítem</th><th>Qué incluye</th><th class="price">Costo/mes (COP)</th></tr></thead>
+    <tbody>
+      <tr><td>Microsoft 365 / OneDrive / Graph <span class="pill free">INCLUIDO</span></td><td>Ya lo tienen con el dominio @valdivia.com — sin costo adicional</td><td class="price">$0</td></tr>
+      <tr><td>IA de lectura — <b>GPT-4o</b></td><td>Modelo de visión económico que lee y extrae los campos<small>≈ $40 COP/documento · variable (ver calculadora)</small></td><td class="price">≈ $62.000</td></tr>
+      <tr><td>IA de verificación — <b>Jev</b></td><td>Validador económico que audita cada extracción antes de escribir<small>≈ $20 COP/documento</small></td><td class="price">≈ $31.000</td></tr>
+      <tr><td>Servidor / hosting / orquestación</td><td>VPS o contenedor donde corre el flujo 24/7 (incluye n8n/cron)</td><td class="price">≈ $120.000</td></tr>
+      <tr><td>Soporte — bajo demanda <span class="pill free">½ TARIFA</span></td><td>Solo cuando se necesite (ajustes, incidentes). No es un fijo mensual.<small>$100.000/hora — mitad de la tarifa normal de $200.000</small></td><td class="price">$100.000 / h</td></tr>
+      <tr class="total"><td colspan="2">Operación recurrente (sin soporte · ≈1.560 docs/mes)</td><td class="price">≈ $213.000 / mes</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">⚠️ <b>Nota sobre los costos de IA:</b> usamos <b>GPT-4o</b> (lectura) y <b>Jev</b> (verificación), ambos económicos — juntos ≈ $60 COP por documento. El estimado asume el volumen real de Valdivia ≈ 1.560 documentos/mes (360/semana); con menos volumen, cuesta menos. La infraestructura de Microsoft (Entra ID, OneDrive, Graph API) <b>no tiene costo adicional</b> porque ya está incluida en el correo corporativo. Mira abajo cuánto tiempo y dinero se ahorra.</div>
+</section>
+
+<!-- CALCULADORA -->
+<section id="calc" class="reveal">
+  <div class="eyebrow">Interactivo · ROI</div>
+  <h2>Calculadora de operación y ahorro</h2>
+  <p class="lead">Arranca con el <b>volumen real de Valdivia</b> y ajusta cuánto tarda hoy el trabajo manual. Verás el bajo costo de operar con IA frente a las <b>horas y el dinero que se ahorran</b>.</p>
+
+  <!-- Caso real -->
+  <div class="card" style="margin-top:30px;background:linear-gradient(135deg,rgba(79,157,255,.12),rgba(45,212,167,.1));border-color:rgba(79,157,255,.35)">
+    <span class="vb ok">📍 CASO REAL · VALDIVIA</span>
+    <div class="grid g3" style="gap:16px;margin-top:4px">
+      <div><h3 style="font-size:16px">🏡 20 fincas</h3><p style="font-size:13.5px">Envían soportes cada semana para consolidar en el Excel.</p></div>
+      <div><h3 style="font-size:16px">📝 Actividad 1 · Digitación</h3><p style="font-size:13.5px">~60 hojas/día → <b style="color:var(--lime)">300/semana</b> (~1.300/mes). Hoy ocupa el <b style="color:var(--amber)">30% de la jornada</b> de una persona.</p></div>
+      <div><h3 style="font-size:16px">🧾 Actividad 2 · Liquidaciones</h3><p style="font-size:13.5px"><b style="color:var(--lime)">60 remisiones/semana</b> (~260/mes). Variable: 1 a 5 remisiones por finca.</p></div>
+    </div>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:14px;color:var(--mut)">📦 Total ≈ <b style="color:var(--green)">360 documentos/semana · ~1.560/mes</b> — es el volumen con el que arranca la calculadora.</div>
+  </div>
+
+  <div class="calc">
+    <div class="two">
+      <div>
+        <label for="docs">📄 Documentos procesados por mes: <span class="bignum" id="docsLabel">1.560</span></label>
+        <input type="range" id="docs" min="60" max="3000" step="20" value="1560">
+        <div class="readout"><span>60</span><span>3.000 (≈1.560 = 360/sem)</span></div>
+      </div>
+      <div>
+        <label for="mins">⏱️ Minutos de trabajo manual por documento: <span class="bignum" id="minsLabel">4</span></label>
+        <input type="range" id="mins" min="2" max="30" step="1" value="4">
+        <div class="readout"><span>2 min</span><span>30 min</span></div>
+      </div>
+    </div>
+
+    <div class="result four">
+      <div class="box"><b id="aiCost">$93.600</b><span>IA: GPT-4o + Jev / mes</span></div>
+      <div class="box"><b id="opCost">$213.600</b><span>Operación total / mes</span></div>
+      <div class="box"><b id="hoursSaved">104 h</b><span>Horas manuales ahorradas / mes</span></div>
+      <div class="box"><b id="laborSaved">$644.800</b><span>Valor del tiempo ahorrado / mes</span></div>
+    </div>
+
+    <div class="savings">
+      <div class="sv"><span>💵 Ahorro neto por mes</span><b id="netSaving">$431.200</b></div>
+      <div class="sv"><span>🧑‍🤝‍🧑 Equivale a liberar</span><b id="fteSaved">0,5 personas</b></div>
+      <div class="sv"><span>📈 Recupera la inversión ($8M) en</span><b id="roi">18,6 meses</b></div>
+    </div>
+
+    <p style="color:var(--mut);font-size:13px;margin-top:20px">Supuestos: IA ≈ $60 COP/doc (GPT-4o $40 + Jev $20) + hosting $120.000/mes. Trabajo manual valorado al <b>salario mínimo de Colombia</b> ≈ $6.200/hora (la digitación hoy = 30% de una persona). La digitación simple toma ~2–3 min/doc y una liquidación bastante más; mueve el deslizador según el caso. Soporte aparte: $100.000/hora solo cuando se necesite. 💡 Con el costo real del empleador (prestaciones ≈1,5×) el ahorro y el ROI mejoran ~50%.</p>
+  </div>
+
+  <div class="grid g3" style="margin-top:26px">
+    <div class="card"><div class="ic">💸</div><h3>Retorno rápido</h3><p>Operar con IA cuesta una fracción de lo que vale el tiempo manual al salario mínimo: la inversión se recupera en los primeros meses.</p></div>
+    <div class="card"><div class="ic">📈</div><h3>Escala sin contratar</h3><p>Procesar más fincas o más documentos no requiere más personas, solo un costo marginal de IA.</p></div>
+    <div class="card"><div class="ic">🧾</div><h3>Trazabilidad total</h3><p>Cada dato queda registrado y auditable: quién, cuándo y con qué soporte.</p></div>
+  </div>
+</section>
+
+<!-- PLAN -->
+<section id="plan" class="reveal">
+  <div class="eyebrow">Ejecución</div>
+  <h2>Plan de implementación sugerido</h2>
+  <p class="lead">Cronograma comprimido a <b>2 semanas</b>, ejecutado por un desarrollador senior. Entrega a producción de forma segura y medible.</p>
+  <div class="timeline">
+    <div class="tl"><div class="wk">SEM 1 · DÍA 1–2</div><h4>Setup & accesos</h4><p>Entra ID, permisos, conexión a OneDrive y Excel de prueba.</p></div>
+    <div class="tl"><div class="wk">SEM 1 · DÍA 3–4</div><h4>Captura & OCR</h4><p>Puente de WhatsApp + motor de lectura de documentos.</p></div>
+    <div class="tl"><div class="wk">SEM 1 · DÍA 5</div><h4>Verificación IA</h4><p>Segundo modelo, reglas de negocio y resaltado amarillo.</p></div>
+    <div class="tl"><div class="wk">SEM 2 · DÍA 6–8</div><h4>Carpetas & orquestación</h4><p>Automatización del día 1 y despliegue 24/7.</p></div>
+    <div class="tl"><div class="wk">SEM 2 · DÍA 9–10</div><h4>Pruebas & entrega</h4><p>Documentos reales, afinamiento y capacitación del equipo.</p></div>
+  </div>
+
+  <div class="card" style="margin-top:40px;text-align:center;background:linear-gradient(135deg,rgba(45,212,167,.12),rgba(79,157,255,.12))">
+    <h2 style="margin-bottom:10px">¿Avanzamos? 🚀</h2>
+    <p style="max-width:620px;margin:0 auto 22px">El siguiente paso es validar el alcance final y el volumen real de documentos para cerrar la propuesta formal y arrancar el cronograma.</p>
+    <a class="btn primary" href="#flujo">Revisar el flujo de nuevo</a>
+  </div>
+</section>
+
+<footer>
+  Valdivia · Propuesta de automatización OCR + IA → Excel en la nube · 2026 ·
+  <span style="color:var(--mut)">Valores estimados, sujetos a ajuste según alcance y volumen.</span>
+</footer>
+
+<script>
+  // Reveal on scroll
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+  },{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+  // Pipeline active-stage cycling
+  const stages=[...document.querySelectorAll('.pstage')];
+  let si=0;
+  setInterval(()=>{
+    stages.forEach(s=>s.classList.remove('active'));
+    stages[si].classList.add('active');
+    si=(si+1)%stages.length;
+  },1000);
+
+  // Calculator — operación vs ahorro
+  const fmt = n => '$'+Math.round(n).toLocaleString('es-CO');
+  const COP_GPT4O = 40;       // COP/doc — GPT-4o (visión, económico)
+  const COP_JEV   = 20;       // COP/doc — Jev (verificación, económico)
+  const PER_DOC   = COP_GPT4O + COP_JEV; // 60
+  const HOSTING   = 120000;   // infra mensual fija
+  const WAGE_HR   = 6200;     // COP/hora — salario mínimo Colombia 2025 (≈ $1.423.500 / 230 h)
+  const DEV_COST  = 8000000;  // inversión de desarrollo (pago único)
+  const FTE_HR    = 192;      // horas laborales por persona/mes
+
+  const docs=document.getElementById('docs');
+  const mins=document.getElementById('mins');
+  const docsLabel=document.getElementById('docsLabel');
+  const minsLabel=document.getElementById('minsLabel');
+  const aiCost=document.getElementById('aiCost');
+  const opCost=document.getElementById('opCost');
+  const hoursSaved=document.getElementById('hoursSaved');
+  const laborSaved=document.getElementById('laborSaved');
+  const netSaving=document.getElementById('netSaving');
+  const fteSaved=document.getElementById('fteSaved');
+  const roi=document.getElementById('roi');
+
+  function recalc(){
+    const n=+docs.value, m=+mins.value;
+    const ai  = n*PER_DOC;
+    const op  = ai + HOSTING;
+    const hrs = n*m/60;
+    const labor = hrs*WAGE_HR;
+    const net = labor - op;
+    const fte = hrs/FTE_HR;
+    const roiMonths = net>0 ? DEV_COST/net : Infinity;
+
+    docsLabel.textContent = n.toLocaleString('es-CO');
+    minsLabel.textContent = m;
+    aiCost.textContent = fmt(ai);
+    opCost.textContent = fmt(op);
+    hoursSaved.textContent = Math.round(hrs).toLocaleString('es-CO')+' h';
+    laborSaved.textContent = fmt(labor);
+    netSaving.textContent = fmt(net);
+    fteSaved.textContent = fte.toFixed(1).replace('.',',')+(fte===1?' persona':' personas');
+    roi.textContent = !isFinite(roiMonths) ? '—'
+      : roiMonths<1 ? 'menos de 1 mes'
+      : roiMonths.toFixed(1).replace('.',',')+' meses';
+  }
+  docs.addEventListener('input',recalc);
+  mins.addEventListener('input',recalc);
+  recalc();
+</script>
+</body>
+</html>

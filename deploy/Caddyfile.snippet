@@ -1,0 +1,10 @@
+# Bloque para el Caddyfile compartido (inmobiliaria/deploy/Caddyfile). El DNS de
+# excel.techapoli.com debe apuntar a la IP del VPS antes de recargar Caddy.
+excel.techapoli.com {
+	# Los PDF de liquidación Gramaluz pesan varios MB; el webhook solo trae JSON, pero se
+	# deja holgura por si se usan los endpoints /api/v1 de carga directa.
+	request_body {
+		max_size 50MB
+	}
+	reverse_proxy ocr-excel-app:8010
+}

@@ -1,0 +1,109 @@
+name: Deploy
+
+# Despliegue continuo a Hetzner por SSH. Se dispara al integrar en main. Construye la
+# imagen, la publica en GHCR y entra por SSH al servidor para hacer
+# `docker compose pull && up -d`. El servidor NO compila nada.
+on:
+  push:
+    branches: [main]
+  # Permite lanzar un despliegue a mano desde la pestaña Actions.
+  workflow_dispatch:
+
+# Un despliegue a la vez: dos pushes seguidos no pisan el `up -d` del otro.
+concurrency:
+  group: deploy-ocr-excel-prod
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  # En minúsculas: GHCR no acepta mayúsculas en el nombre del repositorio.
+  IMAGE_NAME: juanhenao31/ocr-excel
+
+jobs:
+  # No se publica una imagen si los tests (mapeo Excel, planillas, webhook) no pasan.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # publicar en GHCR con el GITHUB_TOKEN del propio workflow
+    steps:
+      - uses: actions/checkout@v4
+
+      # Buildx con driver docker-container: sin esto, `cache-to: type=gha` falla con
+      # "Cache export is not supported for the docker driver".
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login en GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadatos de la imagen (tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache entre ejecuciones para no reinstalar deps en cada push.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Copia el compose al servidor (así los cambios de infra se propagan con el mismo
+      # push). El .env NO se toca: vive solo en el servidor. El bloque de sitio del Caddy
+      # compartido es un paso manual único (ver deploy/README.md), no se sincroniza aquí.
+      - name: Copiar ficheros de despliegue
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "deploy/docker-compose.yml"
+          target: "/opt/ocr-excel"
+          strip_components: 1 # deja el fichero en /opt/ocr-excel, sin el prefijo deploy/
+
+      - name: Desplegar por SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/ocr-excel
+            # Login a GHCR para poder bajar la imagen (si el paquete es privado).
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+            docker compose pull
+            docker compose up -d
+            # Limpia imágenes viejas para no llenar el disco del VPS.
+            docker image prune -f

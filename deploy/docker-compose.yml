@@ -1,0 +1,34 @@
+# Despliegue de producción en el VPS Hetzner (mismo servidor que inmobiliaria y electricos).
+#
+# La imagen la construye GitHub Actions y la publica en GHCR; aquí no se compila. El servidor
+# solo hace `docker compose pull && up -d` (ver .github/workflows/deploy.yml).
+#
+# Sin base de datos: el servicio es stateless salvo los Excel generados, que viven en el
+# volumen `outputs` (los enlaces de descarga que se mandan por WhatsApp apuntan ahí).
+#
+# TLS y reverse proxy los hace el Caddy COMPARTIDO (el de inmobiliaria), que alcanza esta app
+# por la red externa `techapoli_web` con el alias `ocr-excel-app`.
+
+services:
+  app:
+    image: ${IMAGE:-ghcr.io/juanhenao31/ocr-excel:latest}
+    container_name: ocr-excel-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - outputs:/data/outputs
+    expose:
+      - "8010"
+    networks:
+      web:
+        aliases:
+          - ocr-excel-app
+
+networks:
+  web:
+    name: techapoli_web
+    external: true
+
+volumes:
+  outputs:

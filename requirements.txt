@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic-settings
+openai>=1.0
+pillow
+openpyxl
+pymupdf
+python-dotenv
+truststore
+typesafe-sdk
+httpx

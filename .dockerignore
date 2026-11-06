@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.archify/
+.env
+.git/
+.github/
+tests/
+business/
+legacy/
+output/
+deploy/
+*.md
+*.html
+*.log
