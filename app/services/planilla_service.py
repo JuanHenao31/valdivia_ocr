@@ -11,6 +11,8 @@ Reglas:
 - Total = fórmula (Rend x Vr Unit en contrato, Jor x Vr Unit en jornal). Si difiere del total
   escrito en la planilla, se marca amarillo.
 - "?" o ilegible -> vacío + amarillo. Duplicados (cédula + fecha + labor) -> señalados.
+- Finca y Labor se contrastan con el diccionario de Valdivia (app/data/labores_por_finca.json):
+  coincidencia alta -> nombre oficial; media -> oficial en amarillo; baja -> lo leído en amarillo.
 """
 
 import unicodedata
@@ -24,6 +26,7 @@ from openpyxl.styles import Font
 from app.core.config import settings
 from app.domain.models import Exception_, OCRResult
 from app.infrastructure.files import UploadedDoc
+from app.services.catalog_service import DEFAULT_CATALOG, LaborCatalog
 from app.services.excel_service import YELLOW_FILL, to_int
 from app.services.ocr_service import OCRService
 from app.services.validation_service import JevValidationService
@@ -128,6 +131,8 @@ class PlanillaResult:
 
 
 class PlanillaService:
+    catalog: LaborCatalog = DEFAULT_CATALOG
+
     def __init__(self) -> None:
         self.ocr = OCRService()
         self.jev = JevValidationService()
@@ -158,6 +163,8 @@ class PlanillaService:
             exc.append(Exception_(tipo="Fecha inconsistente",
                                   detalle=f"Semana {sem} + {dia_sem} = {fecha:%d/%m/%Y}, pero la planilla dice día {dia_mes}",
                                   archivo=filename))
+
+        finca, finca_oficial, finca_review = self._check_finca(finca, filename, exc)
 
         nota = _val(data.get("nota"))
         rows, reviews = [], []
@@ -210,9 +217,53 @@ class PlanillaService:
                     exc.append(Exception_(tipo="Total no cuadra",
                                           detalle=f"{row['personal']}: {cantidad} x {vr_unit} = {calc:,.0f} vs escrito {total_escrito:,}",
                                           archivo=filename))
+            if finca_review:
+                review.add("finca")
+            self._check_labor(row, finca_oficial, review, exc, filename)
             rows.append(row)
             reviews.append(review)
         return rows, reviews, exc
+
+    def _check_finca(self, finca, filename: str, exc: list) -> tuple:
+        """-> (finca a escribir, finca oficial o None, ¿amarilla?)."""
+        if not finca:
+            return finca, None, True
+        if not self.catalog.enabled:
+            return finca, None, False
+        m = self.catalog.match_finca(finca)
+        if m.score >= settings.labor_match_ok:
+            return m.oficial, m.oficial, False
+        if m.score >= settings.labor_match_review:
+            exc.append(Exception_(tipo="Finca dudosa",
+                                  detalle=f"OCR leyó '{finca}', se asumió '{m.oficial}' ({m.score}%)",
+                                  archivo=filename))
+            return m.oficial, m.oficial, True
+        exc.append(Exception_(tipo="Finca no está en el diccionario",
+                              detalle=f"'{finca}' (más parecida: {m.oficial} {m.score}%); labores validadas contra el listado general",
+                              archivo=filename))
+        return finca, None, True
+
+    def _check_labor(self, row: dict, finca_oficial, review: set, exc: list, filename: str) -> None:
+        leida = row["labor"]
+        row["_labor_ocr"] = leida
+        if not leida or not self.catalog.enabled:
+            return
+        m = self.catalog.match_labor(finca_oficial, leida)
+        donde = f"en {finca_oficial}" if finca_oficial else "en el diccionario general"
+        if m.score >= settings.labor_match_ok:
+            row["labor"] = m.oficial
+            return
+        review.add("labor")
+        if m.score >= settings.labor_match_review:
+            row["labor"] = m.oficial
+            row["observaciones"] = " | ".join(x for x in (row["observaciones"], f"OCR leyó: {leida}") if x)
+            exc.append(Exception_(tipo="Labor dudosa",
+                                  detalle=f"{row['personal']}: OCR leyó '{leida}', se asumió '{m.oficial}' ({m.score}%) {donde}",
+                                  archivo=filename))
+        else:
+            exc.append(Exception_(tipo="Labor no existe en finca",
+                                  detalle=f"{row['personal']}: '{leida}' no está {donde} (más parecida: {m.oficial} {m.score}%)",
+                                  archivo=filename))
 
     @staticmethod
     def _same(a, b) -> bool:
@@ -264,7 +315,8 @@ class PlanillaService:
                     data = data2  # raw_text de la lectura usada como base (para Jev)
                 rows, reviews, exc = self.reconcile((rows, reviews, exc), second, doc.filename)
             # Jev: soporte por campo de cada fila.
-            flat = {f"f{i}_{k}": r[k] for i, r in enumerate(rows)
+            # Labor: se valida lo que leyó el OCR, no el nombre oficial del diccionario.
+            flat = {f"f{i}_{k}": r.get("_labor_ocr") if k == "labor" else r[k] for i, r in enumerate(rows)
                     for k in ("personal", "cedula", "labor", "vr_unit", "rend") if r[k] not in (None, "")}
             if flat:
                 for key, sup in self._jev_supports(data.get("raw_text") or "", flat).items():

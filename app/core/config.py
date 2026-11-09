@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # Umbrales para marcar celda en amarillo (revisión humana)
     ocr_conf_threshold: int = 70  # 0-100, confianza auto-reportada por el OCR
     jev_support_threshold: float = 0.7  # 0-1, confianza calibrada de Jev
+    # Diccionario finca/labor (app/data/labores_por_finca.json), similitud 0-100:
+    # >= ok -> se corrige al nombre oficial sin amarillo; >= review -> oficial pero amarillo;
+    # menor -> se deja lo leído en amarillo.
+    labor_match_ok: int = 90
+    labor_match_review: int = 75
 
     # Clasificación de documentos entrantes (webhook): modelo barato para leer el encabezado.
     classifier_model: str = "gpt-4o-mini"
