@@ -121,8 +121,9 @@ async def ycloud_webhook(request: Request, background: BackgroundTasks) -> dict[
         bloque = m.get(tipo) if isinstance(m.get(tipo), dict) else {}
         caption = str(bloque.get("caption") or "")
         filename = _nombre_archivo(tipo, bloque, msg_id or "sin_id")
-        logger.info("media entrante tipo=%s archivo=%s", tipo, filename)
-        background.add_task(get_inbound().procesar_y_responder, ycloud, remitente, bloque, filename, caption)
+        logger.info("media entrante destino=%s tipo=%s archivo=%s", remitente, tipo, filename)
+        # Se encola por remitente; el lote se procesa tras la ventana de silencio.
+        background.add_task(get_inbound().encolar, ycloud, remitente, bloque, filename, caption)
     elif tipo == "text":
         background.add_task(ycloud.enviar_texto, remitente, MSG_AYUDA)
     return _OK

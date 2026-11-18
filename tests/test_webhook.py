@@ -154,7 +154,7 @@ def client(monkeypatch, tmp_path):
     fake = FakeYCloud()
     from app.services.inbound_service import InboundService
 
-    inbound = InboundService(ClassifierService(FakeOCR({}), FakeJev(None)), planillas=FakePlanillas())
+    inbound = InboundService(ClassifierService(FakeOCR({}), FakeJev(None)), planillas=FakePlanillas(), batch_window_s=0)
     monkeypatch.setattr(webhooks, "get_ycloud", lambda: fake)
     monkeypatch.setattr(webhooks, "get_inbound", lambda: inbound)
     monkeypatch.setattr(webhooks, "vistos", webhooks._Vistos())
@@ -211,3 +211,132 @@ def test_webhook_no_clasificado_pide_aclarar(client, monkeypatch):
     c, fake = client
     post(c, evento("wamid.4", caption=""))  # FakeOCR({}) -> sin encabezado -> desconocido
     assert fake.docs == [] and "No pude identificar" in fake.textos[0][1]
+
+
+# --- lotes por remitente -----------------------------------------------------
+
+class FakeClassifierPorNombre:
+    """planilla*.jpg -> planillas, rem*.jpg -> documentos, falla*.jpg lanza, resto desconocido."""
+
+    def classify(self, doc, caption=""):
+        from app.services.classifier_service import Clasificacion
+
+        if doc.filename.startswith("falla"):
+            raise RuntimeError("OCR caído")
+        if doc.filename.startswith("planilla"):
+            return Clasificacion(DocumentType.CONTROL_DIARIO, RUTA_PLANILLAS, "reglas", 1.0, "")
+        if doc.filename.startswith("rem"):
+            return Clasificacion(DocumentType.REMISION, RUTA_DOCUMENTOS, "reglas", 1.0, "")
+        return Clasificacion(DocumentType.OTRO, RUTA_DESCONOCIDA, "reglas", 0.0, "")
+
+
+class FakePipeline:
+    def __init__(self):
+        self.llamadas = []
+
+    def process(self, docs):
+        from types import SimpleNamespace
+
+        self.llamadas.append([d.filename for d in docs])
+        if any(d.filename.startswith("rem_mala") for d in docs):
+            raise RuntimeError("doc corrupto")
+        s = SimpleNamespace(documents=[SimpleNamespace(doc_type=DocumentType.REMISION)],
+                            yellow_cells=["A1"], exceptions=[])
+        return b"xlsx2", s
+
+
+class CountingPlanillas(FakePlanillas):
+    def __init__(self):
+        self.llamadas = []
+
+    def process(self, docs):
+        self.llamadas.append([d.filename for d in docs])
+        return super().process(docs)
+
+
+@pytest.fixture
+def lote(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "outputs_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "public_base_url", "https://excel.techapoli.com")
+    monkeypatch.setenv("DOWNLOAD_URL_SECRET", "dl-secret")
+    from app.services.inbound_service import InboundService, Lotes
+
+    plan, pipe = CountingPlanillas(), FakePipeline()
+    svc = InboundService(FakeClassifierPorNombre(), pipeline=pipe, planillas=plan)
+    svc._lotes = Lotes(svc.procesar_lote, ventana=3600, maximo=1000, espera_max=7200)
+    return svc, plan, pipe
+
+
+def _encolar(svc, fake, nombres, destino="+573111111111"):
+    for n in nombres:
+        svc.encolar(fake, destino, {"link": n}, n)
+
+
+def test_lote_un_envio_por_grupo(lote):
+    svc, plan, pipe = lote
+    fake = FakeYCloud()
+    _encolar(svc, fake, ["planilla1.jpg", "planilla2.jpg", "rem1.jpg", "rem2.jpg", "rem3.jpg", "x.jpg", "y.jpg"])
+    assert fake.docs == [] and svc.lotes.pendientes("+573111111111") == 7
+    svc.lotes.vaciar_todo()
+    assert plan.llamadas == [["planilla1.jpg", "planilla2.jpg"]]
+    assert pipe.llamadas == [["rem1.jpg", "rem2.jpg", "rem3.jpg"]]
+    assert len(fake.docs) == 2
+    assert "2 planilla(s)" in fake.docs[0][3] and "3 documento(s)" in fake.docs[1][3]
+    assert len(fake.textos) == 1 and "x.jpg, y.jpg" in fake.textos[0][1]
+
+
+def test_lote_fallo_parcial_no_hunde_el_lote(lote):
+    svc, plan, pipe = lote
+    fake = FakeYCloud()
+    _encolar(svc, fake, ["planilla1.jpg", "falla1.jpg", "rem1.jpg", "rem_mala.jpg", "rem2.jpg"])
+    svc.lotes.vaciar_todo()
+    assert len(fake.docs) == 2
+    assert pipe.llamadas[-1] == ["rem1.jpg", "rem2.jpg"]  # reproceso sin el malo
+    assert len(fake.textos) == 1  # un solo aviso de error por lote
+    assert "falla1.jpg" in fake.textos[0][1] and "rem_mala.jpg" in fake.textos[0][1]
+
+
+def test_fallo_de_envio_no_dispara_mensaje_de_error(lote, caplog):
+    svc, _, _ = lote
+
+    class YCloudBloqueado(FakeYCloud):
+        def enviar_documento(self, *a, **k):
+            raise RuntimeError("131056 rate limit")
+
+        def enviar_texto(self, d, t):
+            raise AssertionError("no debe intentar otro mensaje")
+
+    fake = YCloudBloqueado()
+    _encolar(svc, fake, ["planilla1.jpg", "rem1.jpg", "x.jpg", "falla.jpg"])
+    with caplog.at_level("INFO"):
+        svc.lotes.vaciar_todo()
+    assert "no se pudo entregar" in caplog.text
+    assert "falló el procesamiento del lote" not in caplog.text
+
+
+def test_lote_maximo_y_ventana_por_remitente(lote):
+    svc, plan, _ = lote
+    svc.lotes.maximo = 2
+    fake = FakeYCloud()
+    _encolar(svc, fake, ["planilla1.jpg"], "+571")
+    _encolar(svc, fake, ["planilla2.jpg"], "+572")
+    assert fake.docs == []
+    _encolar(svc, fake, ["planilla3.jpg"], "+571")  # llega al máximo -> vacía ya
+    assert [d[0] for d in fake.docs] == ["+571"] and plan.llamadas == [["planilla1.jpg", "planilla3.jpg"]]
+    svc.lotes.vaciar_todo()
+
+
+def test_lote_timer_vence(monkeypatch, tmp_path):
+    from app.services.inbound_service import Lotes
+
+    vaciados = []
+    lotes = Lotes(lambda y, d, items: vaciados.append((d, [i.filename for i in items])), ventana=0.05)
+    from app.services.inbound_service import Pendiente
+
+    lotes.agregar(None, "+57", Pendiente({}, "a"))
+    lotes.agregar(None, "+57", Pendiente({}, "b"))
+    for _ in range(100):
+        if vaciados:
+            break
+        time.sleep(0.02)
+    assert vaciados == [("+57", ["a", "b"])]
