@@ -360,7 +360,7 @@ def test_lote_id_de_telemetria_llega_a_los_hilos_de_clasificacion(entorno, monke
     svc._clasificar = espia
     items = [Pendiente({"link": n}, n) for n in ["planilla1.jpg", "rem1.jpg"]]
     svc.procesar_lote(FakeYCloud(), DEST, items)
-    assert len(vistos) == 2 and len(set(vistos)) == 1 and vistos[0].startswith("_573111111111-")
+    assert len(vistos) == 2 and len(set(vistos)) == 1 and vistos[0].startswith("_573111111111_")
     assert telemetria.lote_actual.get() is None
 
 
@@ -370,7 +370,8 @@ def test_lote_id_unico_y_ordenable_en_el_mismo_segundo(monkeypatch):
 
     from app.infrastructure import pendientes as pmod
 
-    monkeypatch.setattr(pmod.time, "strftime", lambda fmt, *a: _time.strftime(fmt, (2026, 11, 20, 11, 7, 37, 4, 324, 0)))
+    real_strftime = _time.strftime  # time es el mismo módulo: capturar antes de parchear
+    monkeypatch.setattr(pmod.time, "strftime", lambda fmt, *a: real_strftime(fmt, (2026, 11, 20, 11, 7, 37, 4, 324, 0)))
     ids = {pmod.nuevo_lote_id("573001234567") for _ in range(50)}
     assert len(ids) == 50
     assert all(re.fullmatch(r"573001234567_20261120_110737_[0-9a-f]{8}", i) for i in ids)
@@ -379,15 +380,3 @@ def test_lote_id_unico_y_ordenable_en_el_mismo_segundo(monkeypatch):
     monkeypatch.undo()
     assert pmod.nuevo_lote_id("x") > "x_20261120_110737_ffffffff"
 
-
-def test_lote_id_unico_y_ordenable_en_el_mismo_segundo(monkeypatch):
-    import re
-    import time as _t
-
-    from app.infrastructure import pendientes as pmod
-
-    monkeypatch.setattr(pmod.time, "strftime", lambda f, *a: _t.strftime(f, _t.localtime(1_800_000_000)))
-    ids = {pmod.nuevo_lote_id("57300") for _ in range(50)}
-    assert len(ids) == 50
-    assert all(re.fullmatch(r"57300_\d{8}_\d{6}_[0-9a-f]{8}", i) for i in ids)
-    assert re.fullmatch(r"\d{8}_\d{6}_[0-9a-f]{8}", pmod.nuevo_lote_id())
