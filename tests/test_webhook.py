@@ -173,7 +173,9 @@ def evento(msg_id="wamid.1", tipo="image", to="+573000000000", caption="planilla
 
 
 def post(c, cuerpo, firma=None):
-    return c.post("/webhooks/ycloud", content=cuerpo, headers={"YCloud-Signature": firma or firmar(cuerpo)})
+    r = c.post("/webhooks/ycloud", content=cuerpo, headers={"YCloud-Signature": firma or firmar(cuerpo)})
+    webhooks.get_inbound().lotes.esperar()  # ventana 0 -> el vaciado corre en un hilo propio
+    return r
 
 
 def test_webhook_rechaza_firma_invalida(client):
@@ -231,15 +233,30 @@ class FakeClassifierPorNombre:
 
 
 class FakePipeline:
-    def __init__(self):
-        self.llamadas = []
+    """Implementa analizar/armar como el servicio real: un PhotoResult por doc, nunca lanza."""
 
-    def process(self, docs):
-        from types import SimpleNamespace
+    def __init__(self):
+        self.llamadas = []  # una entrada por llamada a analizar
+        self.armados = []
+        self.analizados = []  # un nombre por cada análisis individual
+
+    def analizar(self, docs):
+        from app.services.resultados import PhotoResult
 
         self.llamadas.append([d.filename for d in docs])
-        if any(d.filename.startswith("rem_mala") for d in docs):
-            raise RuntimeError("doc corrupto")
+        out = []
+        for d in docs:
+            self.analizados.append(d.filename)
+            if d.filename.startswith("rem_mala"):
+                out.append(PhotoResult(ok=False, filename=d.filename, error="doc corrupto", exc_type="RuntimeError"))
+            else:
+                out.append(PhotoResult(ok=True, filename=d.filename, data=d.filename))
+        return out
+
+    def armar(self, results):
+        from types import SimpleNamespace
+
+        self.armados.append([r.filename for r in results])
         s = SimpleNamespace(documents=[SimpleNamespace(doc_type=DocumentType.REMISION)],
                             yellow_cells=["A1"], exceptions=[])
         return b"xlsx2", s
@@ -291,7 +308,8 @@ def test_lote_fallo_parcial_no_hunde_el_lote(lote):
     _encolar(svc, fake, ["planilla1.jpg", "falla1.jpg", "rem1.jpg", "rem_mala.jpg", "rem2.jpg"])
     svc.lotes.vaciar_todo()
     assert len(fake.docs) == 2
-    assert pipe.llamadas[-1] == ["rem1.jpg", "rem2.jpg"]  # reproceso sin el malo
+    assert pipe.llamadas == [["rem1.jpg", "rem_mala.jpg", "rem2.jpg"]]  # un solo análisis
+    assert pipe.armados == [["rem1.jpg", "rem2.jpg"]]  # Excel solo con los buenos
     assert len(fake.textos) == 1  # un solo aviso de error por lote
     assert "falla1.jpg" in fake.textos[0][1] and "rem_mala.jpg" in fake.textos[0][1]
 
@@ -321,7 +339,8 @@ def test_lote_maximo_y_ventana_por_remitente(lote):
     _encolar(svc, fake, ["planilla1.jpg"], "+571")
     _encolar(svc, fake, ["planilla2.jpg"], "+572")
     assert fake.docs == []
-    _encolar(svc, fake, ["planilla3.jpg"], "+571")  # llega al máximo -> vacía ya
+    _encolar(svc, fake, ["planilla3.jpg"], "+571")  # llega al máximo -> vacía ya (en otro hilo)
+    svc.lotes.esperar()
     assert [d[0] for d in fake.docs] == ["+571"] and plan.llamadas == [["planilla1.jpg", "planilla3.jpg"]]
     svc.lotes.vaciar_todo()
 
@@ -340,3 +359,39 @@ def test_lote_timer_vence(monkeypatch, tmp_path):
             break
         time.sleep(0.02)
     assert vaciados == [("+57", ["a", "b"])]
+
+
+def test_lote_descarga_y_clasificacion_concurrentes(lote, monkeypatch):
+    """Los ítems se clasifican en paralelo (Barrier) y se preservan orden y aislamiento de fallos."""
+    import threading
+
+    svc, plan, pipe = lote
+    monkeypatch.setenv("INBOUND_PROCESS_WORKERS", "4")
+    barrera = threading.Barrier(4, timeout=5)  # solo se rompe si 4 clasificaciones corren a la vez
+    base = svc.classifier
+
+    class ClasificadorConcurrente:
+        def classify(self, doc, caption=""):
+            barrera.wait()
+            if doc.filename == "rem_boom.jpg":
+                raise RuntimeError("OCR caído")
+            return base.classify(doc, caption)
+
+    svc.classifier = ClasificadorConcurrente()
+    fake = FakeYCloud()
+    _encolar(svc, fake, ["rem3.jpg", "rem_boom.jpg", "rem1.jpg", "rem2.jpg"])
+    svc.lotes.vaciar_todo()
+    assert not barrera.broken
+    assert pipe.llamadas == [["rem3.jpg", "rem1.jpg", "rem2.jpg"]]  # orden de llegada
+    assert len(fake.docs) == 1
+    assert len(fake.textos) == 1 and "rem_boom.jpg" in fake.textos[0][1]
+
+
+def test_lote_cada_doc_se_analiza_una_sola_vez(lote):
+    svc, _, pipe = lote
+    fake = FakeYCloud()
+    _encolar(svc, fake, ["rem1.jpg", "rem_mala.jpg", "rem2.jpg"])
+    svc.lotes.vaciar_todo()
+    assert sorted(pipe.analizados) == ["rem1.jpg", "rem2.jpg", "rem_mala.jpg"]  # sin reintentos
+    assert pipe.armados == [["rem1.jpg", "rem2.jpg"]]
+    assert len(fake.docs) == 1 and len(fake.textos) == 1 and "rem_mala.jpg" in fake.textos[0][1]

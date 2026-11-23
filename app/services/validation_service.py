@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typesafe_sdk import Choice, Noul
 
 from app.domain.models import DocumentType, OCRResult
+from app.infrastructure.limites import JEV_SEM
 from app.infrastructure.typesafe_client import get_typesafe_client
 
 # Etiquetas de clasificación -> enum de dominio
@@ -38,15 +39,14 @@ class JevValidationService:
         client = get_typesafe_client()
         if client is None or not text.strip():
             return None
-        resp = client.system_one(
-            state={"raw_text": text},
-            questions={
-                "doc_type": Choice(
-                    instructions="¿Qué tipo de documento es `raw_text`? Clasifícalo en una categoría.",
-                    criteria=_DOC_CRITERIA,
-                )
-            },
-        )
+        questions = {
+            "doc_type": Choice(
+                instructions="¿Qué tipo de documento es `raw_text`? Clasifícalo en una categoría.",
+                criteria=_DOC_CRITERIA,
+            )
+        }
+        with JEV_SEM:
+            resp = client.system_one(state={"raw_text": text}, questions=questions)
         ans = resp.answers["doc_type"]
         try:
             return DocumentType(ans.choice), float(ans.confidence)
@@ -80,7 +80,8 @@ class JevValidationService:
                 ),
             )
 
-        resp = client.system_one(state=state, questions=questions)
+        with JEV_SEM:
+            resp = client.system_one(state=state, questions=questions)
         answers = resp.answers
 
         dt_answer = answers["doc_type"]

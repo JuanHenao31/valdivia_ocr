@@ -30,7 +30,28 @@ async def lifespan(app: FastAPI):
         truststore.inject_into_ssl()
     except Exception:  # pragma: no cover
         logger.warning("truststore no disponible; se usa la verificación TLS por defecto")
+    # Lotes de WhatsApp que quedaron a medias (reinicio/caída): se reconstruyen desde disco y se
+    # vacían a los pocos segundos. No se vacía al apagar: lo pendiente sigue en disco.
+    if settings.ycloud_enabled:
+        try:
+            from app.api.webhooks import get_inbound, get_ycloud
+
+            n = get_inbound().recuperar(get_ycloud())
+            if n:
+                logger.info("recuperados %d archivo(s) pendientes de WhatsApp", n)
+        except Exception:
+            logger.exception("falló la recuperación de lotes pendientes de WhatsApp")
     yield
+    # Apagado: no se arrancan vaciados nuevos y se espera (acotado, por debajo de los 10 s de
+    # Docker) a los que están en curso. Lo no terminado sigue en disco y se recupera al arrancar
+    # (entrega al-menos-una-vez: un lote cortado a mitad de envío puede repetirse).
+    if settings.ycloud_enabled:
+        try:
+            from app.api.webhooks import get_inbound
+
+            get_inbound().lotes.apagar(settings.shutdown_timeout_s)
+        except Exception:
+            logger.exception("falló el apagado ordenado de los lotes de WhatsApp")
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)

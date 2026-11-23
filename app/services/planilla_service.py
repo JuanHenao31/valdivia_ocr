@@ -28,7 +28,8 @@ from app.domain.models import Exception_, OCRResult
 from app.infrastructure.files import UploadedDoc
 from app.services.catalog_service import DEFAULT_CATALOG, LaborCatalog
 from app.services.excel_service import YELLOW_FILL, to_int
-from app.services.ocr_service import OCRService
+from app.services.ocr_service import PLANILLA_SCHEMA, OCRService
+from app.services.resultados import PhotoResult, analizar_en_paralelo, primer_fallo
 from app.services.validation_service import JevValidationService
 
 COLUMNS = [
@@ -302,31 +303,64 @@ class PlanillaService:
                     review.add("total" if key == "modalidad" else key)
         return rows_a, rev_a, exc
 
-    def process(self, docs: list[UploadedDoc]) -> PlanillaResult:
-        all_rows, all_reviews, exceptions = [], [], []
+    @staticmethod
+    def _ocr_kwargs(doc: UploadedDoc) -> dict:
+        """Esquema strict, tope de tokens y timeout de planillas, explícitos (no por detección de prompt)."""
+        return {
+            "schema": PLANILLA_SCHEMA,
+            "schema_name": "planilla",
+            "max_tokens": settings.ocr_max_tokens_planillas,
+            "timeout": settings.openai_timeout_planillas_s,
+            "filename": doc.filename,
+        }
+
+    def _process_doc(self, doc: UploadedDoc, model: str) -> tuple[list[dict], list[set], list[Exception_]]:
+        """OCR (+ doble lectura) + Jev de UN documento. No toca estado compartido:
+        devuelve sus filas/revisiones/excepciones para ensamblarlas en orden."""
+        data = self.ocr.extract_json(doc.content, SYSTEM_PROMPT, USER_PROMPT, model=model, **self._ocr_kwargs(doc))
+        rows, reviews, exc = self.build_rows(data, doc.filename)
+        if settings.planilla_double_read:
+            data2 = self.ocr.extract_json(doc.content, SYSTEM_PROMPT, USER_PROMPT, model=model, **self._ocr_kwargs(doc))
+            second = self.build_rows(data2, doc.filename)
+            if len(second[0]) > len(rows):
+                data = data2  # raw_text de la lectura usada como base (para Jev)
+            rows, reviews, exc = self.reconcile((rows, reviews, exc), second, doc.filename)
+        # Jev: soporte por campo de cada fila.
+        # Labor: se valida lo que leyó el OCR, no el nombre oficial del diccionario.
+        flat = {f"f{i}_{k}": r.get("_labor_ocr") if k == "labor" else r[k] for i, r in enumerate(rows)
+                for k in ("personal", "cedula", "labor", "vr_unit", "rend") if r[k] not in (None, "")}
+        if flat:
+            for key, sup in self._jev_supports(data.get("raw_text") or "", flat).items():
+                if sup < settings.jev_support_threshold:
+                    i, k = key[1:].split("_", 1)
+                    reviews[int(i)].add(k)
+        return rows, reviews, exc
+
+    def analizar(self, docs: list[UploadedDoc], workers: int | None = None) -> list[PhotoResult]:
+        """OCR + Jev de cada doc en paralelo (pool PLANILLA_WORKERS). Un PhotoResult por doc, en
+        orden; `data` = (rows, reviews, exceptions). Nunca lanza por el fallo de una foto."""
         model = settings.planillas_model
-        for doc in docs:
-            data = self.ocr.extract_json(doc.content, SYSTEM_PROMPT, USER_PROMPT, model=model)
-            rows, reviews, exc = self.build_rows(data, doc.filename)
-            if settings.planilla_double_read:
-                data2 = self.ocr.extract_json(doc.content, SYSTEM_PROMPT, USER_PROMPT, model=model)
-                second = self.build_rows(data2, doc.filename)
-                if len(second[0]) > len(rows):
-                    data = data2  # raw_text de la lectura usada como base (para Jev)
-                rows, reviews, exc = self.reconcile((rows, reviews, exc), second, doc.filename)
-            # Jev: soporte por campo de cada fila.
-            # Labor: se valida lo que leyó el OCR, no el nombre oficial del diccionario.
-            flat = {f"f{i}_{k}": r.get("_labor_ocr") if k == "labor" else r[k] for i, r in enumerate(rows)
-                    for k in ("personal", "cedula", "labor", "vr_unit", "rend") if r[k] not in (None, "")}
-            if flat:
-                for key, sup in self._jev_supports(data.get("raw_text") or "", flat).items():
-                    if sup < settings.jev_support_threshold:
-                        i, k = key[1:].split("_", 1)
-                        reviews[int(i)].add(k)
+        workers = settings.planilla_workers if workers is None else workers
+        return analizar_en_paralelo(lambda d: self._process_doc(d, model), docs, workers, "planilla")
+
+    def armar(self, results: list[PhotoResult]) -> PlanillaResult:
+        """Ensambla el Excel SOLO con los resultados ok, en el orden original (secuencial)."""
+        all_rows, all_reviews, exceptions = [], [], []
+        for r in results:
+            if not r.ok:
+                continue
+            rows, reviews, exc = r.data
             all_rows += rows
             all_reviews += reviews
             exceptions += exc
         return self.to_excel(all_rows, all_reviews, exceptions)
+
+    def process(self, docs: list[UploadedDoc], workers: int | None = None) -> PlanillaResult:
+        """analizar + armar. Todo-o-nada (contrato del endpoint REST): si algún doc falla se
+        re-lanza la excepción original del primero (en orden) que falló."""
+        results = self.analizar(docs, workers)
+        primer_fallo(results)
+        return self.armar(results)
 
     @staticmethod
     def to_excel(rows: list[dict], reviews: list[set], exceptions: list[Exception_]) -> PlanillaResult:

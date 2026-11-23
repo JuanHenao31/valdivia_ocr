@@ -6,3 +6,6 @@ __pycache__/
 output/
 .archify/
 business/
+
+# Datos reales del cliente: nunca versionar
+test_data/

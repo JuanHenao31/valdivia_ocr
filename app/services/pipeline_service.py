@@ -17,6 +17,7 @@ from app.services.ocr_service import (
     REMISION_FIELDS,
     OCRService,
 )
+from app.services.resultados import PhotoResult, analizar_en_paralelo, primer_fallo
 from app.services.validation_service import JevValidationService, ValidationResult
 
 # Campos que no se marcan como "sin valor" (pueden faltar legítimamente).
@@ -87,19 +88,39 @@ class DocumentPipeline:
             return ocr_type, validation.doc_type_confidence
         return ocr_type, 0.0
 
+    def _analyze(self, doc: UploadedDoc) -> list[tuple[DocumentType, float, list[ExtractedField]]]:
+        """Trabajo por documento, puro respecto al pipeline: no toca estado compartido."""
+        out = []
+        for ocr in self.ocr.extract(doc.content, filename=doc.filename):
+            validation = self.jev.validate(ocr)
+            doc_type, conf = self._doc_type(ocr, validation)
+            names = self._FIELDS_BY_TYPE.get(doc_type, [])
+            out.append((doc_type, conf, build_fields(ocr.fields, validation, names)))
+        return out
+
+    def analizar(self, docs: list[UploadedDoc]) -> list[PhotoResult]:
+        """OCR + Jev de cada doc en paralelo (pool PIPELINE_WORKERS). Un PhotoResult por doc, en
+        orden; `data` = lista de (doc_type, conf, fields). Nunca lanza por el fallo de una foto."""
+        return analizar_en_paralelo(self._analyze, docs, settings.pipeline_workers, "pipeline")
+
     def process(self, docs: list[UploadedDoc]) -> tuple[bytes, ProcessResult]:
+        """analizar + armar. Todo-o-nada (contrato del endpoint REST): si algún doc falla se
+        re-lanza la excepción original del primero (en orden) que falló."""
+        results = self.analizar(docs)
+        primer_fallo(results)
+        return self.armar(results)
+
+    def armar(self, results: list[PhotoResult]) -> tuple[bytes, ProcessResult]:
+        """Ensambla (cruce entre docs + Excel) SOLO con los ok, secuencialmente y en orden."""
         result = ProcessResult(jev_enabled=settings.jev_enabled)
         buckets: dict[DocumentType, list[tuple[SourcedDoc, DocumentResult]]] = {
             t: [] for t in self._FIELDS_BY_TYPE
         }
-
-        for doc in docs:
-            for k, ocr in enumerate(self.ocr.extract(doc.content)):
-                validation = self.jev.validate(ocr)
-                doc_type, conf = self._doc_type(ocr, validation)
-                names = self._FIELDS_BY_TYPE.get(doc_type, [])
-                fields = build_fields(ocr.fields, validation, names)
-                name = doc.filename if k == 0 else f"{doc.filename} (doc {k + 1})"
+        for r in results:
+            if not r.ok:
+                continue
+            for k, (doc_type, conf, fields) in enumerate(r.data):
+                name = r.filename if k == 0 else f"{r.filename} (doc {k + 1})"
                 dr = DocumentResult(filename=name, doc_type=doc_type, doc_type_confidence=conf, fields=fields)
                 result.documents.append(dr)
                 if doc_type in buckets:
